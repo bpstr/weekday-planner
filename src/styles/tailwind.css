@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+section {
+    @apply m-4
+}
+
+section h1 {
+    @apply font-bold text-2xl
+}
+
+section h3 {
+    @apply font-bold mt-4 mb-2;
+}
+
+.task {
+    @apply flex gap-2 mb-2 items-center ;
+}
+
+.task input[type=checkbox] {
+    @apply relative shrink-0 appearance-none w-5 h-5 border-2 rounded-full border-blue-500 bg-white checked:bg-blue-800 checked:border-0 focus:outline-none focus:ring-offset-0 focus:ring-2 focus:ring-blue-100 ;
+}
+
+.task .task-name {
+    @apply focus:outline-none w-full;
+
+}

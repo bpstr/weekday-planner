@@ -1,0 +1,260 @@
+---
+// Component imports
+import { Layout } from "@globals"
+---
+
+<Layout title="Astro PWA Starter">
+	<section>
+
+	</section>
+
+	<style>
+		section h1 {
+			font-size: large;
+			font-weight: bold;
+		}
+	</style>
+
+	<script>
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const STORAGE_KEY_PREFIX = "weeklyTasks";
+
+/* ---------- WEEK CALCULATION (ISO week) ---------- */
+function getISOWeek(date = new Date()) {
+    const tmp = new Date(date);
+    tmp.setHours(0,0,0,0);
+
+    // Thursday determines the year
+    tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+
+    const week1 = new Date(tmp.getFullYear(), 0, 4);
+    return {
+        year: tmp.getFullYear(),
+        week: 1 + Math.round(((tmp - week1) / 86400000 - 3 + ((week1.getDay()+6)%7)) / 7)
+    };
+}
+
+/* ---------- STORAGE ---------- */
+function getStorageKey(year, week) {
+    return `${STORAGE_KEY_PREFIX}-${year}-W${week}`;
+}
+
+function loadTasks(year, week) {
+    const data = localStorage.getItem(getStorageKey(year, week));
+    return data ? JSON.parse(data) : {};
+}
+
+function saveTasks(year, week, tasks) {
+    localStorage.setItem(getStorageKey(year, week), JSON.stringify(tasks));
+}
+
+/* ---------- RENDER ---------- */
+function createTaskInput(day, value = "", checked = false) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "task";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "task-checkbox";
+    checkbox.checked = checked;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = " task-name";
+    input.value = value;
+
+    wrapper.appendChild(checkbox);
+    wrapper.appendChild(input);
+
+    return { wrapper, input, checkbox };
+}
+
+function renderWeek(section, year, week, tasks) {
+    section.innerHTML = "";
+
+    const h1 = document.createElement("h1");
+    h1.textContent = `${year} W${week}`;
+    section.appendChild(h1);
+
+    DAYS.forEach(day => {
+        const h3 = document.createElement("h3");
+        h3.textContent = day;
+        section.appendChild(h3);
+
+        const dayTasks = tasks[day] || [];
+
+        dayTasks.forEach(task => {
+            const { wrapper, input } = createTaskInput(day, task.text, task.done);
+            section.appendChild(wrapper);
+            attachEvents(input, day);
+        });
+
+        // empty input for adding new task
+        const { wrapper, input } = createTaskInput(day, "");
+        section.appendChild(wrapper);
+        attachEvents(input, day, true);
+    });
+}
+
+/* ---------- EVENTS ---------- */
+function attachEvents(input, day, isNew = false) {
+    const wrapper = input.closest("div.task");
+    const checkbox = wrapper.querySelector(".task-checkbox");
+
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+
+            const newInput = createTaskInput(day, "");
+            wrapper.after(newInput.wrapper);
+            attachEvents(newInput.input, day, true);
+
+            newInput.input.focus();
+        }
+
+		// ⬆️ UP
+		if (e.key === "ArrowUp") {
+			e.preventDefault();
+
+			let prev = wrapper.previousElementSibling;
+
+			while (prev && !prev.classList?.contains("task")) {
+				prev = prev.previousElementSibling;
+			}
+
+			if (prev) {
+				const target = prev.querySelector(".task-name");
+				target.focus();
+
+				// move cursor to end
+				const len = target.value.length;
+				target.setSelectionRange(len, len);
+			}
+		}
+
+		// ⬇️ DOWN
+		if (e.key === "ArrowDown") {
+			e.preventDefault();
+
+			let next = wrapper.nextElementSibling;
+
+			while (next && !next.classList?.contains("task")) {
+				next = next.nextElementSibling;
+			}
+
+			if (next) {
+				const target = next.querySelector(".task-name");
+				target.focus();
+
+				// move cursor to end
+				const len = target.value.length;
+				target.setSelectionRange(len, len);
+			}
+		}
+
+		if ((e.key === "Backspace" || e.key === "Delete") && input.value === "") {
+			e.preventDefault();
+
+			// count how many task rows belong to this day
+			let count = 0;
+			let node = wrapper.previousElementSibling;
+
+			// walk backwards to find the day header
+			while (node && node.tagName !== "H3") {
+				if (node.classList && node.classList.contains("task")) {
+					count++;
+				}
+				node = node.previousElementSibling;
+			}
+
+			node = wrapper.nextElementSibling;
+
+			// walk forward until next day header
+			while (node && node.tagName !== "H3") {
+				if (node.classList && node.classList.contains("task")) {
+					count++;
+				}
+				node = node.nextElementSibling;
+			}
+
+			// include current one
+			count += 1;
+
+			// only delete if more than one task exists for the day
+			if (count <= 1) return;
+
+			const prev = wrapper.previousElementSibling;
+			const next = wrapper.nextElementSibling;
+
+			wrapper.remove();
+
+			// focus management
+			if (prev && prev.classList?.contains("task")) {
+				prev.querySelector(".task-name").focus();
+			} else if (next && next.classList?.contains("task")) {
+				next.querySelector(".task-name").focus();
+			}
+
+			saveAll();
+		}
+    });
+	
+
+    input.addEventListener("blur", () => {
+        saveAll();
+    });
+
+    // ✅ NEW: save when checkbox is toggled
+    checkbox.addEventListener("change", () => {
+        saveAll();
+    });
+}
+
+/* ---------- COLLECT + SAVE ---------- */
+function collectTasks(section) {
+    const tasks = {};
+
+    let currentDay = null;
+
+    section.childNodes.forEach(node => {
+        if (node.tagName === "H3") {
+            currentDay = node.textContent;
+            tasks[currentDay] = [];
+        }
+
+        if (node.classList && node.classList.contains("task")) {
+            const input = node.querySelector(".task-name");
+            const checkbox = node.querySelector(".task-checkbox");
+
+            if (input.value.trim() !== "") {
+                tasks[currentDay].push({
+                    text: input.value,
+                    done: checkbox.checked
+                });
+            }
+        }
+    });
+
+    return tasks;
+}
+
+function saveAll() {
+    const section = document.querySelector("section");
+    const { year, week } = getISOWeek();
+    const tasks = collectTasks(section);
+    saveTasks(year, week, tasks);
+}
+
+/* ---------- INIT ---------- */
+function init() {
+    const section = document.querySelector("section");
+    const { year, week } = getISOWeek();
+
+    const tasks = loadTasks(year, week);
+    renderWeek(section, year, week, tasks);
+}
+
+init();
+</script>
+
+</Layout>
